@@ -1,0 +1,11 @@
+target/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+*.log
+*.db
+chroma_data/
+data/
+.codex/
+docs/

@@ -1,0 +1,2 @@
+# 示例 URL（可替换为企业内网文档）
+https://example.com

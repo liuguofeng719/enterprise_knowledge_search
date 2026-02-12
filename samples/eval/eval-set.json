@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "question": "如何进行文档入库？",
+      "expectedKeywords": [
+        "入库",
+        "文档"
+      ]
+    },
+    {
+      "question": "如何设置分割参数？",
+      "expectedKeywords": [
+        "chunk",
+        "分割"
+      ]
+    }
+  ]
+}
