@@ -97,6 +97,3 @@ streamlit run frontend/app.py
 - 批量嵌入与评测集路径
 - LlamaIndex 侧车配置（rag.llamaindex.*）：base-url、collection、top-k、timeout-ms、mode(langchain4j/llamaindex/dual)
 
-## 文档更新记录
-- 2026-02-12，执行者：人静桂花落。同步新增：docx/html 支持、上传入库前端增强、核心链路日志说明。
-- 2026-02-12，执行者：Codex。同步新增：LlamaIndex 侧车服务启动说明与配置项说明。
