@@ -19,6 +19,7 @@ public class RagProperties {
     private final Cache cache = new Cache();
     private final Concurrency concurrency = new Concurrency();
     private final Ingest ingest = new Ingest();
+    private final LlamaIndex llamaindex = new LlamaIndex();
 
     public Chroma getChroma() {
         return chroma;
@@ -46,6 +47,10 @@ public class RagProperties {
 
     public Ingest getIngest() {
         return ingest;
+    }
+
+    public LlamaIndex getLlamaindex() {
+        return llamaindex;
     }
 
     public static class Chroma {
@@ -515,6 +520,64 @@ public class RagProperties {
 
         public void setBatchSize(int batchSize) {
             this.batchSize = batchSize;
+        }
+    }
+
+    public static class LlamaIndex {
+        @NotBlank
+        private String baseUrl = "http://localhost:9001";
+        @NotBlank
+        private String collection = "llamaindex_v1";
+        @Min(1)
+        private int topK = 5;
+        @Min(100)
+        private int timeoutMs = 8000;
+        private Mode mode = Mode.LANGCHAIN4J;
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getCollection() {
+            return collection;
+        }
+
+        public void setCollection(String collection) {
+            this.collection = collection;
+        }
+
+        public int getTopK() {
+            return topK;
+        }
+
+        public void setTopK(int topK) {
+            this.topK = topK;
+        }
+
+        public int getTimeoutMs() {
+            return timeoutMs;
+        }
+
+        public void setTimeoutMs(int timeoutMs) {
+            this.timeoutMs = timeoutMs;
+        }
+
+        public Mode getMode() {
+            return mode;
+        }
+
+        public void setMode(Mode mode) {
+            this.mode = mode;
+        }
+
+        public enum Mode {
+            LANGCHAIN4J,
+            LLAMAINDEX,
+            DUAL
         }
     }
 }

@@ -5,6 +5,7 @@
 ## 技术栈
 - 后端：Spring Boot 3、MyBatis-Plus、H2
 - RAG：LangChain4j、Chroma、Ollama
+- 侧车：LlamaIndex（Python）
 - 检索与优化：Lucene（全文检索）、RRF 混合检索、Cross-Encoder 重排、Caffeine 缓存、Resilience4j 并发限流
 - 文档解析：PDFBox、Apache POI（DOCX）、Jsoup（HTML）
 - 前端：Streamlit
@@ -24,8 +25,17 @@ chroma run --path ./chroma_data
 2. 启动 Ollama（示例模型：llama3.1）
 ```bash
 ollama pull llama3.1
-ollama serve
+ ollama serve
 ```
+
+3. 启动 LlamaIndex 侧车服务（可选）
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r llamaindex_service/requirements.txt
+uvicorn llamaindex_service.app:app --host 0.0.0.0 --port 9001
+```
+如使用 Python 3.14 运行 chromadb 可能存在兼容性问题，建议使用 Python 3.11/3.12。
 
 ## 入库作业
 ```bash
@@ -85,6 +95,8 @@ streamlit run frontend/app.py
 - 关键词重排与 Cross-Encoder 重排开关
 - 查询/结果缓存、并发限流与队列容量
 - 批量嵌入与评测集路径
+- LlamaIndex 侧车配置（rag.llamaindex.*）：base-url、collection、top-k、timeout-ms、mode(langchain4j/llamaindex/dual)
 
 ## 文档更新记录
 - 2026-02-12，执行者：人静桂花落。同步新增：docx/html 支持、上传入库前端增强、核心链路日志说明。
+- 2026-02-12，执行者：Codex。同步新增：LlamaIndex 侧车服务启动说明与配置项说明。

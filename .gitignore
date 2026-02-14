@@ -5,6 +5,7 @@ target/
 .DS_Store
 *.log
 *.db
+.venv/
 chroma_data/
 data/
 .codex/

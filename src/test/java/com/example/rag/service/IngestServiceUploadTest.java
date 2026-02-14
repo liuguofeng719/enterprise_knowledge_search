@@ -47,7 +47,8 @@ class IngestServiceUploadTest {
                 batchEmbeddingIngestor,
                 fullTextSearchService,
                 splitter,
-                metadataService
+                metadataService,
+                null
         );
 
         MockMultipartFile file = new MockMultipartFile(
@@ -82,7 +83,8 @@ class IngestServiceUploadTest {
                 batchEmbeddingIngestor,
                 fullTextSearchService,
                 splitter,
-                metadataService
+                metadataService,
+                null
         );
 
         byte[] docxBytes;
@@ -139,7 +141,8 @@ class IngestServiceUploadTest {
                 batchEmbeddingIngestor,
                 fullTextSearchService,
                 splitter,
-                metadataService
+                metadataService,
+                null
         );
 
         Logger logger = (Logger) LoggerFactory.getLogger(IngestService.class);

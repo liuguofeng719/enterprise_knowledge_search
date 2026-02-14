@@ -3,6 +3,8 @@ package com.example.rag.service;
 import com.example.rag.config.RagProperties;
 import com.example.rag.ingest.parser.DocxDocumentParser;
 import com.example.rag.ingest.parser.HtmlDocumentParser;
+import com.example.rag.llamaindex.LlamaIndexClient;
+import com.example.rag.llamaindex.LlamaIndexDtos.LlamaIndexIngestResponse;
 import com.example.rag.retrieval.FullTextSearchService;
 import com.example.rag.service.dto.UploadOptions;
 import com.example.rag.service.dto.UploadResult;
@@ -18,6 +20,8 @@ import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -29,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 // 离线入库服务：加载文档、构建全文索引与向量入库
 @Service
@@ -42,25 +47,36 @@ public class IngestService {
     private final FullTextSearchService fullTextSearchService;
     private final DocumentSplitter splitter;
     private final DocumentMetadataService metadataService;
+    private final LlamaIndexClient llamaIndexClient;
 
     public IngestService(RagProperties properties,
                          EmbeddingStoreIngestor ingestor,
                          BatchEmbeddingIngestor batchEmbeddingIngestor,
                          FullTextSearchService fullTextSearchService,
                          DocumentSplitter splitter,
-                         DocumentMetadataService metadataService) {
+                         DocumentMetadataService metadataService,
+                         LlamaIndexClient llamaIndexClient) {
         this.properties = properties;
         this.ingestor = ingestor;
         this.batchEmbeddingIngestor = batchEmbeddingIngestor;
         this.fullTextSearchService = fullTextSearchService;
         this.splitter = splitter;
         this.metadataService = metadataService;
+        this.llamaIndexClient = llamaIndexClient;
     }
 
     // 执行全量入库
     public void ingestAll() {
         RagProperties.Ingest ingest = properties.getIngest();
         List<Document> documents = new ArrayList<>();
+        RagProperties.LlamaIndex.Mode mode = properties.getLlamaindex().getMode();
+
+        if (mode != RagProperties.LlamaIndex.Mode.LANGCHAIN4J && llamaIndexClient != null) {
+            ingestAllWithLlamaIndex(ingest);
+            if (mode == RagProperties.LlamaIndex.Mode.LLAMAINDEX) {
+                return;
+            }
+        }
 
         // 记录离线入库起始参数，便于排障
         log.info("离线入库开始, pdfDir={}, mdDir={}, webUrls={}, version={}, tags={}",
@@ -105,6 +121,14 @@ public class IngestService {
     public UploadResult ingestUploads(List<MultipartFile> files, UploadOptions options) {
         if (files == null || files.isEmpty()) {
             return new UploadResult(0, 0, List.of());
+        }
+        RagProperties.LlamaIndex.Mode mode = properties.getLlamaindex().getMode();
+        if (mode == RagProperties.LlamaIndex.Mode.LLAMAINDEX && llamaIndexClient != null) {
+            LlamaIndexIngestResponse response = llamaIndexClient.ingestUploads(files, options);
+            return toUploadResult(response);
+        }
+        if (mode == RagProperties.LlamaIndex.Mode.DUAL && llamaIndexClient != null) {
+            llamaIndexClient.ingestUploads(files, options);
         }
         RagProperties.Ingest ingest = properties.getIngest();
         String version = resolveVersion(options, ingest);
@@ -176,6 +200,86 @@ public class IngestService {
                 stored,
                 files.size() - stored);
         return new UploadResult(documents.size(), stored, storedPaths);
+    }
+
+    private void ingestAllWithLlamaIndex(RagProperties.Ingest ingest) {
+        List<Resource> pdfResources = toResources(listFiles(ingest.getPdfDir(), List.of("pdf")));
+        if (!pdfResources.isEmpty()) {
+            llamaIndexClient.ingestResources(pdfResources,
+                    new UploadOptions(ingest.getVersion(), ingest.getTags(), "pdf"));
+        }
+        List<String> allowed = normalizeExtensions(ingest.getAllowedExtensions());
+        allowed = allowed.stream().filter(ext -> !"pdf".equalsIgnoreCase(ext)).toList();
+        List<Resource> mdResources = toResources(listFiles(ingest.getMdDir(), allowed));
+        if (!mdResources.isEmpty()) {
+            llamaIndexClient.ingestResources(mdResources,
+                    new UploadOptions(ingest.getVersion(), ingest.getTags(), "markdown"));
+        }
+        List<String> urls = readUrls(ingest.getWebUrls());
+        if (!urls.isEmpty()) {
+            llamaIndexClient.ingestUrls(urls,
+                    new UploadOptions(ingest.getVersion(), ingest.getTags(), "web"));
+        }
+    }
+
+    private List<Path> listFiles(String dir, List<String> allowedExtensions) {
+        if (dir == null || dir.isBlank()) {
+            return List.of();
+        }
+        Path path = Path.of(dir);
+        if (!Files.exists(path)) {
+            log.warn("目录不存在: {}", dir);
+            return List.of();
+        }
+        try (Stream<Path> stream = Files.walk(path)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(file -> isAllowedExtension(extractExtension(file.getFileName().toString()), allowedExtensions))
+                    .toList();
+        } catch (IOException e) {
+            throw new IllegalStateException("扫描目录失败: " + dir, e);
+        }
+    }
+
+    private List<Resource> toResources(List<Path> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return List.of();
+        }
+        return paths.stream()
+                .map(FileSystemResource::new)
+                .toList();
+    }
+
+    private List<String> readUrls(String urlsFile) {
+        if (urlsFile == null || urlsFile.isBlank()) {
+            return List.of();
+        }
+        Path path = Path.of(urlsFile);
+        if (!Files.exists(path)) {
+            log.warn("URL 列表不存在: {}", urlsFile);
+            return List.of();
+        }
+        try {
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+            List<String> urls = new ArrayList<>();
+            for (String line : lines) {
+                String url = line == null ? "" : line.trim();
+                if (url.isEmpty() || url.startsWith("#")) {
+                    continue;
+                }
+                urls.add(url);
+            }
+            return urls;
+        } catch (IOException e) {
+            throw new IllegalStateException("读取 URL 列表失败: " + urlsFile, e);
+        }
+    }
+
+    private UploadResult toUploadResult(LlamaIndexIngestResponse response) {
+        if (response == null) {
+            return new UploadResult(0, 0, List.of());
+        }
+        return new UploadResult(response.ingested(), response.stored(), List.of());
     }
 
     private List<Document> loadPdf(String dir, RagProperties.Ingest ingest) {

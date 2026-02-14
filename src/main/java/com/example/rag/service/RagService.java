@@ -1,6 +1,9 @@
 package com.example.rag.service;
 
 import com.example.rag.config.RagProperties;
+import com.example.rag.llamaindex.LlamaIndexClient;
+import com.example.rag.llamaindex.LlamaIndexDtos.LlamaIndexQueryItem;
+import com.example.rag.llamaindex.LlamaIndexDtos.LlamaIndexQueryResponse;
 import com.example.rag.perf.QueryLimiter;
 import com.example.rag.perf.RagCache;
 import com.example.rag.rerank.CrossEncoderReranker;
@@ -12,6 +15,7 @@ import com.example.rag.retrieval.HybridRetrievalService;
 import com.example.rag.retrieval.VectorContentRetriever;
 import com.example.rag.service.dto.RagRequest;
 import com.example.rag.service.dto.RagResponse;
+import com.example.rag.service.dto.UploadOptions;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.ChatModel;
@@ -29,8 +33,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 // 检索与生成的主入口，负责混合检索、重排、缓存与限流
@@ -48,6 +54,7 @@ public class RagService {
     private final RagCache ragCache;
     private final QueryLimiter queryLimiter;
     private final ScoringModel scoringModel;
+    private final LlamaIndexClient llamaIndexClient;
     private final KeywordReranker keywordReranker = new KeywordReranker();
 
     public RagService(EmbeddingModel embeddingModel,
@@ -57,7 +64,8 @@ public class RagService {
                       FullTextSearchService fullTextSearchService,
                       RagCache ragCache,
                       QueryLimiter queryLimiter,
-                      @Nullable ScoringModel scoringModel) {
+                      @Nullable ScoringModel scoringModel,
+                      @Nullable LlamaIndexClient llamaIndexClient) {
         this.embeddingModel = embeddingModel;
         this.embeddingStore = embeddingStore;
         this.chatModel = chatModel;
@@ -66,6 +74,7 @@ public class RagService {
         this.ragCache = ragCache;
         this.queryLimiter = queryLimiter;
         this.scoringModel = scoringModel;
+        this.llamaIndexClient = llamaIndexClient;
     }
 
     // 对外问答入口：先查结果缓存，再进入限流执行
@@ -109,6 +118,7 @@ public class RagService {
         FullTextFilter fullTextFilter = buildFullTextFilter(request);
         RagProperties.Retrieval.Rerank rerank = properties.getRetrieval().getRerank();
         RagProperties.Retrieval.CrossEncoder crossEncoder = rerank.getCrossEncoder();
+        RagProperties.LlamaIndex.Mode mode = properties.getLlamaindex().getMode();
 
         // 参数日志：核心检索配置
         log.info("开始检索, topK={}, minScore={}, candidateSize={}, hybrid={}, crossEncoder={}, keywordRerank={}",
@@ -119,7 +129,50 @@ public class RagService {
                 crossEncoder.isEnabled(),
                 rerank.isKeywordEnabled());
 
-        // 向量检索候选
+        LlamaIndexOutcome llamaIndexOutcome = retrieveWithLlamaIndex(request, topK, minScore, mode);
+        if (mode == RagProperties.LlamaIndex.Mode.LLAMAINDEX) {
+            if (llamaIndexOutcome.evidence().isEmpty()) {
+                log.info("LlamaIndex 无候选内容，直接返回 NO_MATCH");
+                return new RagResponse(NO_MATCH, List.of(), List.of());
+            }
+            return buildAnswer(request, llamaIndexOutcome.evidence(), llamaIndexOutcome.sources());
+        }
+
+        RetrievalOutcome langchainOutcome = retrieveWithLangChain4j(
+                request,
+                topK,
+                minScore,
+                candidateSize,
+                filter,
+                fullTextFilter,
+                rerank,
+                crossEncoder
+        );
+
+        List<String> evidence = langchainOutcome.evidence();
+        List<String> sources = langchainOutcome.sources();
+
+        if (mode == RagProperties.LlamaIndex.Mode.DUAL && !llamaIndexOutcome.evidence().isEmpty()) {
+            evidence = mergeEvidence(llamaIndexOutcome.evidence(), evidence, topK);
+            sources = mergeSources(llamaIndexOutcome.sources(), sources);
+        }
+
+        if (evidence.isEmpty()) {
+            log.info("证据为空，直接返回 NO_MATCH");
+            return new RagResponse(NO_MATCH, List.of(), List.of());
+        }
+
+        return buildAnswer(request, evidence, sources);
+    }
+
+    private RetrievalOutcome retrieveWithLangChain4j(RagRequest request,
+                                                     int topK,
+                                                     double minScore,
+                                                     int candidateSize,
+                                                     Filter filter,
+                                                     FullTextFilter fullTextFilter,
+                                                     RagProperties.Retrieval.Rerank rerank,
+                                                     RagProperties.Retrieval.CrossEncoder crossEncoder) {
         VectorContentRetriever vectorRetriever = new VectorContentRetriever(
                 embeddingModel,
                 embeddingStore,
@@ -132,7 +185,6 @@ public class RagService {
         log.info("向量候选数: {}", vectorContents == null ? 0 : vectorContents.size());
 
         List<Content> fused;
-        // 混合检索：向量 + 全文
         if (properties.getRetrieval().getHybrid().isEnabled()) {
             int fullTextTopK = properties.getRetrieval().getHybrid().getFullTextTopK();
             FullTextContentRetriever fullTextRetriever = new FullTextContentRetriever(
@@ -148,8 +200,7 @@ public class RagService {
 
         log.info("融合候选数: {}", fused == null ? 0 : fused.size());
         if (fused == null || fused.isEmpty()) {
-            log.info("无候选内容，直接返回 NO_MATCH");
-            return new RagResponse(NO_MATCH, List.of(), List.of());
+            return new RetrievalOutcome(List.of(), List.of());
         }
 
         List<TextSegment> segments = fused.stream()
@@ -159,7 +210,6 @@ public class RagService {
         List<TextSegment> rankedSegments = segments;
         List<String> evidence;
 
-        // 交叉重排：优先于关键词重排
         if (crossEncoder.isEnabled() && scoringModel != null) {
             CrossEncoderReranker reranker = new CrossEncoderReranker(scoringModel);
             int rerankTopK = Math.min(crossEncoder.getTopK(), segments.size());
@@ -179,7 +229,6 @@ public class RagService {
                     .toList();
             log.info("交叉重排完成, rerankTopK={}, evidenceSize={}", rerankTopK, evidence.size());
         } else if (rerank.isKeywordEnabled() && request.keywords() != null && !request.keywords().isEmpty()) {
-            // 关键词重排：对候选文本加权
             List<KeywordReranker.CandidateSegment> candidates = new ArrayList<>(segments.size());
             for (int i = 0; i < segments.size(); i++) {
                 double baseScore = 1.0 / (i + 1);
@@ -202,8 +251,7 @@ public class RagService {
         }
 
         if (evidence.isEmpty()) {
-            log.info("证据为空，直接返回 NO_MATCH");
-            return new RagResponse(NO_MATCH, List.of(), List.of());
+            return new RetrievalOutcome(List.of(), List.of());
         }
 
         List<String> sources = rankedSegments.stream()
@@ -213,11 +261,68 @@ public class RagService {
                 .distinct()
                 .collect(Collectors.toList());
 
+        return new RetrievalOutcome(evidence, sources);
+    }
+
+    private LlamaIndexOutcome retrieveWithLlamaIndex(RagRequest request,
+                                                     int topK,
+                                                     double minScore,
+                                                     RagProperties.LlamaIndex.Mode mode) {
+        if (mode == RagProperties.LlamaIndex.Mode.LANGCHAIN4J || llamaIndexClient == null) {
+            return new LlamaIndexOutcome(List.of(), List.of());
+        }
+        UploadOptions options = new UploadOptions(request.version(), request.tags(), request.source());
+        LlamaIndexQueryResponse response = llamaIndexClient.query(request.question(), topK, options);
+        if (response == null || response.items() == null || response.items().isEmpty()) {
+            return new LlamaIndexOutcome(List.of(), List.of());
+        }
+        List<LlamaIndexQueryItem> filtered = response.items().stream()
+                .filter(item -> item != null && item.score() >= minScore)
+                .limit(topK)
+                .toList();
+        List<String> evidence = filtered.stream()
+                .map(LlamaIndexQueryItem::text)
+                .filter(text -> text != null && !text.isBlank())
+                .toList();
+        List<String> sources = filtered.stream()
+                .map(LlamaIndexQueryItem::metadata)
+                .map(this::toSource)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        return new LlamaIndexOutcome(evidence, sources);
+    }
+
+    private RagResponse buildAnswer(RagRequest request, List<String> evidence, List<String> sources) {
         String prompt = buildPrompt(request.question(), evidence);
         String answer = chatModel.chat(prompt);
         log.info("生成完成, answerLen={}, sources={}", answer == null ? 0 : answer.length(), sources.size());
-
         return new RagResponse(answer, evidence, sources);
+    }
+
+    private List<String> mergeEvidence(List<String> primary, List<String> secondary, int limit) {
+        Set<String> merged = new LinkedHashSet<>();
+        if (primary != null) {
+            merged.addAll(primary);
+        }
+        if (secondary != null) {
+            merged.addAll(secondary);
+        }
+        if (merged.isEmpty()) {
+            return List.of();
+        }
+        return merged.stream().limit(limit).toList();
+    }
+
+    private List<String> mergeSources(List<String> primary, List<String> secondary) {
+        Set<String> merged = new LinkedHashSet<>();
+        if (primary != null) {
+            merged.addAll(primary);
+        }
+        if (secondary != null) {
+            merged.addAll(secondary);
+        }
+        return merged.stream().toList();
     }
 
     private Filter buildFilter(RagRequest request) {
@@ -263,6 +368,21 @@ public class RagService {
         }
         String source = metadata.getString("source");
         String path = metadata.getString("path");
+        if (source == null && path == null) {
+            return null;
+        }
+        if (path == null) {
+            return source;
+        }
+        return source + ":" + path;
+    }
+
+    private String toSource(java.util.Map<String, String> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        String source = metadata.get("source");
+        String path = metadata.get("path");
         if (source == null && path == null) {
             return null;
         }
@@ -330,5 +450,11 @@ public class RagService {
             }
         }
         return selected.isEmpty() ? segments : selected;
+    }
+
+    private record RetrievalOutcome(List<String> evidence, List<String> sources) {
+    }
+
+    private record LlamaIndexOutcome(List<String> evidence, List<String> sources) {
     }
 }

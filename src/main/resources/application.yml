@@ -64,6 +64,12 @@ rag:
     max-size: 8
     queue-capacity: 64
     name: rag-ask
+  llamaindex:
+    base-url: http://localhost:9001
+    collection: llamaindex_v1
+    top-k: 5
+    timeout-ms: 8000
+    mode: dual
   ingest:
     pdf-dir: samples/pdf
     md-dir: samples/md

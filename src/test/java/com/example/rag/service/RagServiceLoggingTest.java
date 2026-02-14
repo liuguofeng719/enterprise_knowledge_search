@@ -87,7 +87,7 @@ class RagServiceLoggingTest {
         QueryLimiter limiter = QueryLimiter.disabled();
         FullTextSearchService fullTextSearchService = new FullTextSearchService(properties);
         RagService ragService = new RagService(embeddingModel, embeddingStore, chatModel, properties,
-                fullTextSearchService, cache, limiter, null);
+                fullTextSearchService, cache, limiter, null, null);
 
         Logger logger = (Logger) LoggerFactory.getLogger(RagService.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();

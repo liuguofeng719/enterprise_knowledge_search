@@ -92,7 +92,7 @@ class RagServiceCacheIntegrationTest {
         FullTextSearchService fullTextSearchService = new FullTextSearchService(properties);
 
         RagService ragService = new RagService(embeddingModel, embeddingStore, chatModel, properties,
-                fullTextSearchService, cache, limiter, null);
+                fullTextSearchService, cache, limiter, null, null);
 
         RagRequest request = new RagRequest("问题", null, null, null, null, null, null);
 
