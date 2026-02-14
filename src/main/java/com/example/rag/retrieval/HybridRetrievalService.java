@@ -9,7 +9,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-// 混合检索融合器：基于RRF融合多路候选
+/**
+ * 混合检索融合服务
+ * 
+ * 原理：结合向量检索（语义理解）和全文检索（关键词匹配）的优势
+ * - 向量检索：基于Embedding相似度，擅长同义词、概念关联
+ * - 全文检索：基于Lucene精确匹配，擅长专有名词、技术术语
+ * - RRF融合：Reciprocal Rank Fusion算法融合两路排序结果
+ * 
+ * 融合公式：score = 1 / (k + rank)，k通常取60
+ * 
+ * @see VectorContentRetriever 向量检索
+ * @see FullTextContentRetriever 全文检索
+ */
 public class HybridRetrievalService {
 
     private final ContentRetriever vectorRetriever;

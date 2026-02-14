@@ -7,7 +7,23 @@ import io.github.resilience4j.bulkhead.ThreadPoolBulkheadConfig;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
-// 并发限流/排队封装，基于Resilience4j线程池隔离
+/**
+ * 并发限流服务
+ * 
+ * 功能：限制同时执行的问答请求数量，防止突发流量压垮系统
+ * 
+ * 实现：Resilience4j ThreadPoolBulkhead（线程池隔离）
+ * - coreSize：核心线程数
+ * - maxSize：最大线程数
+ * - queueCapacity：队列容量，超出后拒绝请求
+ * 
+ * 适用场景：
+ * - LLM响应慢，需要控制并发
+ * - 防止Ollama/Chroma被压垮
+ * - 保护下游依赖服务
+ * 
+ * @see RagProperties.Concurrency 配置项
+ */
 public class QueryLimiter {
 
     private final ThreadPoolBulkhead bulkhead;

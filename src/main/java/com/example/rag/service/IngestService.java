@@ -35,7 +35,24 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-// 离线入库服务：加载文档、构建全文索引与向量入库
+/**
+ * 文档离线入库服务核心类
+ * 
+ * 功能：
+ *   1. 加载多格式文档（PDF/DOCX/HTML/MD/TXT/CSV/URL）
+ *   2. 文档分片与元数据 enrichment
+ *   3. 构建全文索引（Lucene）
+ *   4. 向量入库（Chroma）
+ *   5. 可选：LlamaIndex侧车入库
+ * 
+ * 入库方式：
+ *   - 离线入库：ingestAll() 扫描指定目录批量入库
+ *   - 上传入库：ingestUploads() API接收上传文件入库
+ * 
+ * @see IngestController 上传入库API入口
+ * @see BatchEmbeddingIngestor 批量向量入库
+ * @see FullTextSearchService 全文索引服务
+ */
 @Service
 public class IngestService {
 

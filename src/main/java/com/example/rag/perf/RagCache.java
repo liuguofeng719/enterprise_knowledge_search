@@ -9,7 +9,24 @@ import dev.langchain4j.data.embedding.Embedding;
 import java.time.Duration;
 import java.util.function.Supplier;
 
-// 查询嵌入与问答结果缓存
+/**
+ * RAG 系统二级缓存
+ * 
+ * 缓存层级：
+ *   1. 嵌入缓存（Embedding Cache）
+ *      - 缓存查询向量的Embedding计算结果
+ *      - 避免重复调用Embedding模型
+ *      - 默认TTL：30分钟
+ * 
+ *   2. 结果缓存（Result Cache）
+ *      - 缓存完整问答结果
+ *      - 重复问题直接返回缓存
+ *      - 默认TTL：10分钟
+ * 
+ * 实现：Caffeine（高性能Java缓存，基于W-TinyLFU算法）
+ * 
+ * @see RagProperties.Cache 配置项
+ */
 public class RagCache {
 
     private final RagProperties.Cache properties;

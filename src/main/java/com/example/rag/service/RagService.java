@@ -39,7 +39,25 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-// 检索与生成的主入口，负责混合检索、重排、缓存与限流
+/**
+ * RAG 问答检索服务核心类
+ * 
+ * 功能：
+ *   1. 接收用户问答请求
+ *   2. 执行混合检索（向量检索 + 全文检索 + RRF融合）
+ *   3. 可选重排序（关键词重排 / CrossEncoder重排）
+ *   4. 调用LLM生成答案
+ *   5. 结果缓存与并发限流保护
+ * 
+ * 检索模式：
+ *   - langchain4j：仅使用LangChain4j向量检索
+ *   - llamaindex：仅使用LlamaIndex侧车检索
+ *   - dual：双路并行检索，结果合并
+ * 
+ * @see RagController 问答API入口
+ * @see RagRequest 请求参数
+ * @see RagResponse 返回结果
+ */
 @Service
 public class RagService {
 

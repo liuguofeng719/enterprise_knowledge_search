@@ -20,6 +20,24 @@ import static com.example.rag.llamaindex.LlamaIndexDtos.LlamaIndexIngestUrlsRequ
 import static com.example.rag.llamaindex.LlamaIndexDtos.LlamaIndexQueryRequest;
 import static com.example.rag.llamaindex.LlamaIndexDtos.LlamaIndexQueryResponse;
 
+/**
+ * LlamaIndex 侧车服务 HTTP 客户端
+ * 
+ * 功能：通过 HTTP 与 Python 侧车服务通信
+ *   - 语义检索：/query 接口
+ *   - 文档入库：/ingest 接口
+ *   - URL入库：/ingest/urls 接口
+ *   - 健康检查：/health 接口
+ * 
+ * 使用场景：
+ *   - 作为 LangChain4j 的替代检索引擎
+ *   - 与 LangChain4j 组成 DUAL 模式双路检索
+ * 
+ * 依赖服务：LlamaIndex Python 侧车（FastAPI）
+ * 
+ * @see LlamaIndexConfig 配置类
+ * @see LlamaIndexDtos DTO 定义
+ */
 public class LlamaIndexClient {
 
     private final RestTemplate restTemplate;

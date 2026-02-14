@@ -14,7 +14,24 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.ArrayList;
 import java.util.List;
 
-// 文档上传入库接口
+/**
+ * 文档上传入库 API 控制器
+ * 
+ * 接口：POST /api/ingest/upload
+ * 
+ * 功能：接收用户上传的文档，触发入库流程
+ * 
+ * 请求参数：
+ *   - files：待上传文件（支持PDF/DOCX/HTML/MD/TXT等）
+ *   - version：版本标识（可选，默认v1）
+ *   - tags：标签，多个逗号分隔（可选）
+ *   - source：来源标识（可选，默认upload）
+ * 
+ * 支持格式：pdf, md, markdown, txt, log, csv, docx, html, htm
+ * 
+ * @see IngestService 入库服务
+ * @see UploadResult 返回结果
+ */
 @RestController
 @RequestMapping("/api/ingest")
 public class IngestController {
